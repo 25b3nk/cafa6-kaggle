@@ -150,7 +150,9 @@ cafa6/
 │   ├── generate_embeddings_kaggle_dual_gpu.py  # Kaggle (T4 x2 dual GPU)
 │   ├── train_baseline.py                   # Train simple classifier
 │   ├── train_multitask.py                  # Train multi-task model
-│   └── evaluate.py                         # Evaluation with metrics
+│   ├── evaluate.py                         # Evaluation with metrics
+│   ├── create_submission.py                # Memory-efficient submission creation
+│   └── create_submission_kaggle.py         # Kaggle version (TSV format)
 │
 ├── src/
 │   ├── data/
@@ -163,6 +165,7 @@ cafa6/
 │       ├── losses.py           # Focal loss, weighted BCE
 │       └── sequence_handling.py # Long sequence truncation/chunking
 │
+├── baseline_submission.ipynb    # Complete Kaggle notebook (ready to run)
 ├── eda.py                       # Basic data exploration
 ├── eda_advanced.py              # Advanced EDA with visualizations
 │
@@ -290,6 +293,20 @@ embeddings = generate_embeddings_kaggle(
 
 # Or use smaller model
 --model_name esm2_t30_150M_UR50D
+```
+
+### RAM Overload During Submission Creation
+**Problem**: Accumulating all predictions in memory causes OOM
+
+**Solution**: Use memory-efficient streaming approach. See **[KAGGLE_SUBMISSION_FIX.md](KAGGLE_SUBMISSION_FIX.md)** for complete solution.
+
+```python
+# Bad: Accumulates in RAM
+all_predictions.append(probs)  # OOM!
+
+# Good: Stream to file
+with open('submission.tsv', 'a') as f:
+    f.writelines(rows)  # Write immediately
 ```
 
 ### Only Using 1 GPU on T4 x2

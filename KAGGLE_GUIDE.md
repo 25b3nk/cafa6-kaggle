@@ -688,21 +688,30 @@ gc.collect()
 
 ---
 
-## Step 11: Generate Predictions on Test Set
+## Step 11: Create Submission File (Memory-Efficient)
+
+**IMPORTANT**: The old approach loads all predictions into RAM and causes OOM errors. Use this memory-efficient version instead!
 
 ```python
-# Cell 8: Make predictions on test set (~5 minutes)
+# Cell 8: Create submission file (Memory-Efficient, TSV format)
+# This avoids RAM overload by streaming predictions directly to file
 
 import torch
 import numpy as np
 import pandas as pd
+import pickle
 from tqdm import tqdm
+import gc
+
+print("Loading data...")
 
 # Load test embeddings
 with open('/kaggle/working/test_embeddings.pkl', 'rb') as f:
-    test_emb_data = pickle.load(f)
+    test_data = pickle.load(f)
+test_embeddings = test_data['embeddings']
+protein_ids = test_data['protein_ids']
 
-# Load trained model
+# Load model
 checkpoint = torch.load('/kaggle/working/baseline_model.pt')
 model = SimpleClassifier(
     input_dim=checkpoint['embedding_dim'],
@@ -714,116 +723,112 @@ model.eval()
 # Load GO term mappings
 with open('/kaggle/working/preprocessed_labels.pkl', 'rb') as f:
     label_data = pickle.load(f)
-
 idx_to_go_term = label_data['idx_to_go_term']
 
-print(f"Generating predictions for {len(test_emb_data['protein_ids'])} test proteins...")
+print(f"Generating predictions for {len(protein_ids)} proteins...")
 
-# Generate predictions
-test_embeddings_tensor = torch.FloatTensor(test_emb_data['embeddings'])
-batch_size = 32
-all_predictions = []
+# ============================================================
+# Memory-Efficient Submission Creation (TSV format)
+# ============================================================
 
+output_file = '/kaggle/working/submission.tsv'
+threshold = 0.5  # Adjust if needed
+batch_size = 16  # Small batch to avoid OOM
+
+# Write header (TSV format - tab separated)
+with open(output_file, 'w') as f:
+    f.write("Protein ID\tGO Term\tConfidence\n")
+
+total_preds = 0
+no_pred_count = 0
+
+# Process in batches and write immediately
 with torch.no_grad():
-    for i in tqdm(range(0, len(test_embeddings_tensor), batch_size)):
-        batch = test_embeddings_tensor[i:i+batch_size].cuda()
-        outputs = model(batch)
+    for start_idx in tqdm(range(0, len(protein_ids), batch_size)):
+        end_idx = min(start_idx + batch_size, len(protein_ids))
+
+        # Get batch
+        batch_emb = test_embeddings[start_idx:end_idx]
+        batch_ids = protein_ids[start_idx:end_idx]
+
+        # Predict
+        batch_tensor = torch.FloatTensor(batch_emb).cuda()
+        outputs = model(batch_tensor)
         probs = torch.sigmoid(outputs).cpu().numpy()
-        all_predictions.append(probs)
 
-predictions = np.vstack(all_predictions)
+        # Process each protein in batch
+        rows = []
+        for i, pid in enumerate(batch_ids):
+            protein_probs = probs[i]
 
-print(f"✓ Predictions generated: {predictions.shape}")
+            # Get predictions above threshold
+            pred_indices = np.where(protein_probs > threshold)[0]
+
+            # If no predictions, use top 3
+            if len(pred_indices) == 0:
+                no_pred_count += 1
+                pred_indices = np.argsort(protein_probs)[-3:]
+
+            # Create TSV rows for this protein (tab separated)
+            for idx in pred_indices:
+                go_term = idx_to_go_term[idx]
+                confidence = float(protein_probs[idx])
+                rows.append(f"{pid}\t{go_term}\t{confidence:.6f}\n")
+                total_preds += 1
+
+        # Write batch to file immediately
+        with open(output_file, 'a') as f:
+            f.writelines(rows)
+
+        # Clear memory aggressively
+        del batch_tensor, outputs, probs, rows
+        gc.collect()
+        torch.cuda.empty_cache()
+
+print(f"\n{'='*60}")
+print(f"✓ Submission created: {output_file}")
+print(f"  Total predictions: {total_preds}")
+print(f"  Proteins with no predictions: {no_pred_count}")
+print(f"{'='*60}")
 ```
 
 ---
 
-## Step 12: Create Submission File
+## Step 12: Validate Submission
 
 ```python
-# Cell 9: Create submission file in required format
+# Cell 9: Validate submission file
 
-# CAFA submission format:
-# Each line: ProteinID  GO_Term  Confidence  [OptionalText]
+import pandas as pd
 
-# Parameters
-THRESHOLD = 0.3  # Lower threshold to get more predictions
-TOP_K = 50       # Maximum predictions per protein
+# Read submission (TSV format - tab separated)
+submission = pd.read_csv('/kaggle/working/submission.tsv', sep='\t', nrows=20)
+print(f"First 20 rows:")
+print(submission)
 
-submission_rows = []
+# Check stats
+submission_full = pd.read_csv('/kaggle/working/submission.tsv', sep='\t')
+print(f"\n{'='*60}")
+print(f"Submission stats:")
+print(f"  Total rows: {len(submission_full)}")
+print(f"  Unique proteins: {submission_full['Protein ID'].nunique()}")
+print(f"  Unique GO terms: {submission_full['GO Term'].nunique()}")
+print(f"  Avg predictions per protein: {len(submission_full) / submission_full['Protein ID'].nunique():.1f}")
 
-print("Creating submission file...")
+# Verify all test proteins have predictions
+test_protein_count = len(protein_ids)
+submitted_proteins = submission_full['Protein ID'].nunique()
 
-for protein_idx, protein_id in enumerate(tqdm(test_emb_data['protein_ids'])):
-    protein_preds = predictions[protein_idx]
+if submitted_proteins < test_protein_count:
+    print(f"⚠ Warning: {test_protein_count - submitted_proteins} proteins missing!")
+else:
+    print(f"✓ All {test_protein_count} test proteins have predictions")
 
-    # Get top K predictions above threshold
-    confident_indices = np.where(protein_preds > THRESHOLD)[0]
+print(f"{'='*60}")
 
-    if len(confident_indices) == 0:
-        # If no predictions above threshold, take top 10
-        confident_indices = np.argsort(protein_preds)[-10:]
-    elif len(confident_indices) > TOP_K:
-        # Limit to top K
-        top_k_indices = confident_indices[np.argsort(protein_preds[confident_indices])[-TOP_K:]]
-        confident_indices = top_k_indices
-
-    # Create submission rows
-    for go_idx in confident_indices:
-        go_term = idx_to_go_term[go_idx]
-        confidence = float(protein_preds[go_idx])
-
-        submission_rows.append({
-            'EntryID': protein_id,
-            'term': go_term,
-            'confidence': confidence
-        })
-
-# Create DataFrame
-submission_df = pd.DataFrame(submission_rows)
-
-# Sort by protein ID and confidence (higher confidence first)
-submission_df = submission_df.sort_values(
-    ['EntryID', 'confidence'],
-    ascending=[True, False]
-)
-
-print(f"\n✓ Submission created:")
-print(f"  Total predictions: {len(submission_df)}")
-print(f"  Unique proteins: {submission_df['EntryID'].nunique()}")
-print(f"  Avg predictions per protein: {len(submission_df) / submission_df['EntryID'].nunique():.1f}")
-print(f"\nSample predictions:")
-print(submission_df.head(10))
-```
-
----
-
-## Step 13: Save Submission (Multiple Formats)
-
-```python
-# Cell 10: Save submission in different formats
-
-# Format 1: TSV (Kaggle standard)
-submission_df.to_csv(
-    '/kaggle/working/submission.tsv',
-    sep='\t',
-    index=False,
-    header=True
-)
-
-print("✓ Saved submission.tsv")
-
-# Format 2: CSV (alternative)
-submission_df.to_csv(
-    '/kaggle/working/submission.csv',
-    index=False
-)
-
-print("✓ Saved submission.csv")
-
-# Format 3: With text descriptions (if required)
-# Some competitions want text descriptions of predictions
-# Check sample_submission.tsv for required format
+# Check confidence distribution
+print(f"\nConfidence distribution:")
+print(submission_full['Confidence'].describe())
 
 # Load sample submission to check format
 sample_sub = pd.read_csv(
@@ -832,93 +837,28 @@ sample_sub = pd.read_csv(
     nrows=10
 )
 
-print("\n✓ Sample submission format:")
+print(f"\nSample submission format:")
 print(sample_sub.head())
 
-# Check if your submission matches the format
-print(f"\n✓ Your submission format:")
-print(submission_df.head())
-print(f"\nColumns match: {list(submission_df.columns)[:3] == list(sample_sub.columns)[:3]}")
+print(f"\nYour submission format:")
+print(submission.head())
 
-# Verify file size
-import os
-file_size = os.path.getsize('/kaggle/working/submission.tsv') / (1024**2)
-print(f"\n✓ Submission file size: {file_size:.2f} MB")
-
-# Download link
-from IPython.display import FileLink
-print("\n📥 Download submission file:")
-display(FileLink('/kaggle/working/submission.tsv'))
-```
-
----
-
-## Step 14: Validate Submission
-
-```python
-# Cell 11: Validate submission before uploading
-
-def validate_submission(submission_df, test_protein_ids):
-    """Validate submission meets competition requirements"""
-
-    issues = []
-
-    # Check required columns
-    required_cols = ['EntryID', 'term', 'confidence']
-    if not all(col in submission_df.columns for col in required_cols):
-        issues.append(f"Missing required columns. Need: {required_cols}")
-
-    # Check all test proteins have predictions
-    submission_proteins = set(submission_df['EntryID'].unique())
-    missing_proteins = set(test_protein_ids) - submission_proteins
-    if missing_proteins:
-        issues.append(f"Missing predictions for {len(missing_proteins)} proteins")
-        print(f"  First 5 missing: {list(missing_proteins)[:5]}")
-
-    # Check confidence scores are in [0, 1]
-    if submission_df['confidence'].min() < 0 or submission_df['confidence'].max() > 1:
-        issues.append("Confidence scores must be in [0, 1]")
-
-    # Check GO term format
-    invalid_terms = submission_df[~submission_df['term'].str.match(r'^GO:\d{7}$')]
-    if len(invalid_terms) > 0:
-        issues.append(f"Found {len(invalid_terms)} invalid GO term formats")
-
-    # Check for NaN values
-    if submission_df.isnull().any().any():
-        issues.append("Found NaN values in submission")
-
-    # Statistics
-    print("Submission Statistics:")
-    print(f"  Total predictions: {len(submission_df):,}")
-    print(f"  Unique proteins: {submission_df['EntryID'].nunique():,}")
-    print(f"  Unique GO terms: {submission_df['term'].nunique():,}")
-    print(f"  Avg predictions per protein: {len(submission_df) / submission_df['EntryID'].nunique():.1f}")
-    print(f"  Min confidence: {submission_df['confidence'].min():.4f}")
-    print(f"  Max confidence: {submission_df['confidence'].max():.4f}")
-    print(f"  Avg confidence: {submission_df['confidence'].mean():.4f}")
-
-    if issues:
-        print("\n❌ Validation Issues:")
-        for issue in issues:
-            print(f"  - {issue}")
-        return False
-    else:
-        print("\n✅ Submission is valid!")
-        return True
-
-# Validate
-is_valid = validate_submission(submission_df, test_emb_data['protein_ids'])
-
-if is_valid:
-    print("\n🎉 Ready to submit to Kaggle!")
+# Verify columns match
+required_cols = ['Protein ID', 'GO Term', 'Confidence']
+missing_cols = [col for col in required_cols if col not in submission.columns]
+if missing_cols:
+    print(f"\n❌ Missing columns: {missing_cols}")
 else:
-    print("\n⚠️ Please fix issues before submitting")
+    print(f"\n✓ All required columns present")
+    print(f"✓ Submission file ready for upload!")
+print(f"\n✓ Submission file size: {os.path.getsize('/kaggle/working/submission.tsv') / (1024**2):.2f} MB")
 ```
+
+**Note**: For a complete working Kaggle notebook, see [`baseline_submission.ipynb`](baseline_submission.ipynb) in this repo.
 
 ---
 
-## Step 15: Submit to Kaggle
+## Step 13: Submit to Kaggle
 
 ### Option A: Submit via Kaggle Notebook Output
 
