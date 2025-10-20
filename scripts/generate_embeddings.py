@@ -62,9 +62,11 @@ class ESM2EmbeddingGenerator:
             self.model = self.model.to(self.device)
             self.model.eval()
 
-            # Get embedding dimension
+            # Get embedding dimension and number of layers
             self.embedding_dim = self.model.embed_dim
+            self.num_layers = self.model.num_layers
             print(f"Embedding dimension: {self.embedding_dim}")
+            print(f"Number of layers: {self.num_layers}")
 
         except ImportError:
             raise ImportError("Please install fair-esm: pip install fair-esm")
@@ -115,10 +117,10 @@ class ESM2EmbeddingGenerator:
         batch_labels, batch_strs, batch_tokens = self.batch_converter(truncated_data)
         batch_tokens = batch_tokens.to(self.device)
 
-        # Generate embeddings
+        # Generate embeddings (use last layer)
         with torch.no_grad():
-            results = self.model(batch_tokens, repr_layers=[33], return_contacts=False)
-            embeddings = results['representations'][33]
+            results = self.model(batch_tokens, repr_layers=[self.num_layers], return_contacts=False)
+            embeddings = results['representations'][self.num_layers]
 
         # Extract [CLS] token embeddings (position 0)
         cls_embeddings = embeddings[:, 0, :]
@@ -177,7 +179,7 @@ class ESM2EmbeddingGenerator:
         # Convert to numpy array
         embeddings_array = np.array(embeddings_list)
 
-        print(f"\nEmbedding generation complete!")
+        print("\nEmbedding generation complete!")
         print(f"Total proteins: {num_proteins}")
         print(f"Truncated sequences: {num_truncated} ({num_truncated/num_proteins*100:.1f}%)")
         if num_truncated > 0:

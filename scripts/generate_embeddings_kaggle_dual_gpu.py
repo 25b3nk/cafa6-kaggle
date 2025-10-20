@@ -87,7 +87,9 @@ def generate_embeddings_dual_gpu(data_dir: str,
     model.eval()
 
     embedding_dim = model.module.embed_dim if n_gpus > 1 else model.embed_dim
+    num_layers = model.module.num_layers if n_gpus > 1 else model.num_layers
     print(f"Embedding dimension: {embedding_dim}")
+    print(f"Number of layers: {num_layers}")
 
     # Truncation handler
     handler = LongSequenceHandler()
@@ -117,16 +119,11 @@ def generate_embeddings_dual_gpu(data_dir: str,
         _, _, batch_tokens = batch_converter(batch_data)
         batch_tokens = batch_tokens.cuda()
 
-        # Generate embeddings
+        # Generate embeddings (use last layer)
         # With DataParallel, the model will automatically split the batch across GPUs
         with torch.no_grad():
-            if n_gpus > 1:
-                # For DataParallel, access the underlying model
-                results = model(batch_tokens, repr_layers=[33], return_contacts=False)
-            else:
-                results = model(batch_tokens, repr_layers=[33], return_contacts=False)
-
-            embeddings = results['representations'][33][:, 0, :].cpu().numpy()
+            results = model(batch_tokens, repr_layers=[num_layers], return_contacts=False)
+            embeddings = results['representations'][num_layers][:, 0, :].cpu().numpy()
 
         all_embeddings.extend(embeddings)
         all_protein_ids.extend(batch_ids)
@@ -260,6 +257,8 @@ def benchmark_gpu_options():
     import esm
     model, alphabet = esm.pretrained.load_model_and_alphabet('esm2_t30_150M_UR50D')
 
+    num_layers = model.num_layers
+
     if n_gpus > 1:
         model = nn.DataParallel(model)
 
@@ -276,7 +275,7 @@ def benchmark_gpu_options():
     # Warmup
     with torch.no_grad():
         for _ in range(5):
-            _ = model(batch_tokens, repr_layers=[33])
+            _ = model(batch_tokens, repr_layers=[num_layers])
 
     torch.cuda.synchronize()
 
@@ -286,7 +285,7 @@ def benchmark_gpu_options():
 
     with torch.no_grad():
         for _ in range(n_iterations):
-            _ = model(batch_tokens, repr_layers=[33])
+            _ = model(batch_tokens, repr_layers=[num_layers])
 
     torch.cuda.synchronize()
     end = time.time()

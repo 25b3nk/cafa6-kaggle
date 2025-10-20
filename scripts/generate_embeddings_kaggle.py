@@ -73,7 +73,9 @@ def generate_embeddings_kaggle(data_dir: str,
     model.eval()
 
     embedding_dim = model.embed_dim
+    num_layers = model.num_layers
     print(f"Embedding dimension: {embedding_dim}")
+    print(f"Number of layers: {num_layers}")
 
     # Truncation handler
     handler = LongSequenceHandler()
@@ -103,10 +105,10 @@ def generate_embeddings_kaggle(data_dir: str,
         _, _, batch_tokens = batch_converter(batch_data)
         batch_tokens = batch_tokens.to(device)
 
-        # Generate embeddings
+        # Generate embeddings (use last layer)
         with torch.no_grad():
-            results = model(batch_tokens, repr_layers=[33], return_contacts=False)
-            embeddings = results['representations'][33][:, 0, :].cpu().numpy()
+            results = model(batch_tokens, repr_layers=[num_layers], return_contacts=False)
+            embeddings = results['representations'][num_layers][:, 0, :].cpu().numpy()
 
         all_embeddings.extend(embeddings)
         all_protein_ids.extend(batch_ids)
