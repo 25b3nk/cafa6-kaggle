@@ -2,6 +2,11 @@
 
 This guide shows you how to run the complete baseline pipeline on Kaggle notebooks using free GPU.
 
+**Other Documentation**:
+- [README.md](README.md) - Project overview and quick start
+- [CLAUDE.md](CLAUDE.md) - EDA findings and implementation rationale
+- [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) - Model details, GPU optimization, advanced topics
+
 ---
 
 ## Prerequisites
