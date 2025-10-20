@@ -17,12 +17,12 @@ With 26,125 GO terms and thousands of test proteins, this creates a massive arra
 
 ## Solution: Stream to File
 
-Instead of accumulating predictions, write them directly to the CSV file in batches.
+Instead of accumulating predictions, write them directly to the TSV file in batches.
 
 ### Replace Your Prediction Code With This:
 
 ```python
-# Kaggle Notebook Cell - Memory-Efficient Submission Creation
+# Kaggle Notebook Cell - Memory-Efficient Submission Creation (TSV format)
 
 import torch
 import numpy as np
@@ -56,16 +56,16 @@ idx_to_go_term = label_data['idx_to_go_term']
 print(f"Generating predictions for {len(protein_ids)} proteins...")
 
 # ============================================================
-# Memory-Efficient Submission Creation
+# Memory-Efficient Submission Creation (TSV format)
 # ============================================================
 
-output_file = '/kaggle/working/submission.csv'
+output_file = '/kaggle/working/submission.tsv'
 threshold = 0.5
 batch_size = 16  # Small batch to avoid OOM
 
-# Write header
+# Write header (TSV format - tab separated)
 with open(output_file, 'w') as f:
-    f.write("Protein ID,GO Term,Confidence\n")
+    f.write("Protein ID\tGO Term\tConfidence\n")
 
 total_preds = 0
 no_pred_count = 0
@@ -97,11 +97,11 @@ with torch.no_grad():
                 no_pred_count += 1
                 pred_indices = np.argsort(protein_probs)[-3:]
 
-            # Create CSV rows for this protein
+            # Create TSV rows for this protein (tab separated)
             for idx in pred_indices:
                 go_term = idx_to_go_term[idx]
                 confidence = float(protein_probs[idx])
-                rows.append(f"{pid},{go_term},{confidence:.6f}\n")
+                rows.append(f"{pid}\t{go_term}\t{confidence:.6f}\n")
                 total_preds += 1
 
         # Write batch to file immediately
@@ -119,13 +119,13 @@ print(f"  Total predictions: {total_preds}")
 print(f"  Proteins with no predictions: {no_pred_count}")
 print(f"{'='*60}")
 
-# Validate
-submission = pd.read_csv(output_file, nrows=20)
+# Validate (TSV format - tab separated)
+submission = pd.read_csv(output_file, sep='\t', nrows=20)
 print(f"\nFirst 20 rows:")
 print(submission)
 
 # Check stats
-submission_full = pd.read_csv(output_file)
+submission_full = pd.read_csv(output_file, sep='\t')
 print(f"\nSubmission stats:")
 print(f"  Total rows: {len(submission_full)}")
 print(f"  Unique proteins: {submission_full['Protein ID'].nunique()}")
@@ -245,7 +245,7 @@ Generating predictions for 10000 proteins...
 100%|████████████████████| 625/625 [02:30<00:00, 4.17it/s]
 
 ============================================================
-✓ Submission created: /kaggle/working/submission.csv
+✓ Submission created: /kaggle/working/submission.tsv
   Total predictions: 85432
   Proteins with no predictions: 23
 ============================================================

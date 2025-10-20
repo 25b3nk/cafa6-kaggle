@@ -22,12 +22,13 @@ def create_submission_memory_efficient(
     test_embeddings,
     protein_ids,
     idx_to_go_term,
-    output_path='/kaggle/working/submission.csv',
+    output_path='/kaggle/working/submission.tsv',
     threshold=0.5,
     batch_size=16  # Small batch to avoid OOM
 ):
     """
     Create submission file without loading all predictions into RAM
+    TSV format (tab-separated values)
     """
     print(f"Creating submission for {len(protein_ids)} proteins...")
     print(f"Threshold: {threshold}")
@@ -36,9 +37,9 @@ def create_submission_memory_efficient(
     model.eval()
     device = next(model.parameters()).device
 
-    # Open file and write header
+    # Open file and write header (TSV format - tab separated)
     with open(output_path, 'w') as f:
-        f.write("Protein ID,GO Term,Confidence\n")
+        f.write("Protein ID\tGO Term\tConfidence\n")
 
     total_predictions = 0
     no_pred_count = 0
@@ -70,11 +71,11 @@ def create_submission_memory_efficient(
                     no_pred_count += 1
                     pred_idx = np.argsort(protein_probs)[-3:]
 
-                # Create rows
+                # Create rows (TSV format - tab separated)
                 for idx in pred_idx:
                     go_term = idx_to_go_term[idx]
                     conf = float(protein_probs[idx])
-                    rows.append(f"{pid},{go_term},{conf:.6f}\n")
+                    rows.append(f"{pid}\t{go_term}\t{conf:.6f}\n")
                     total_predictions += 1
 
             # Write batch to file immediately

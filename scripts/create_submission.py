@@ -61,9 +61,9 @@ def create_submission_incremental(model,
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write header
+    # Write header (TSV format - tab separated)
     with open(output_path, 'w') as f:
-        f.write("Protein ID,GO Term,Confidence\n")
+        f.write("Protein ID\tGO Term\tConfidence\n")
 
     total_predictions = 0
     proteins_with_no_predictions = 0
@@ -97,11 +97,11 @@ def create_submission_incremental(model,
                     top_n = min(min_predictions_per_protein, len(protein_probs))
                     pred_indices = np.argsort(protein_probs)[-top_n:]
 
-                # Create rows for this protein
+                # Create rows for this protein (TSV format - tab separated)
                 for idx in pred_indices:
                     go_term = idx_to_go_term[idx]
                     confidence = float(protein_probs[idx])
-                    batch_rows.append(f"{protein_id},{go_term},{confidence:.6f}\n")
+                    batch_rows.append(f"{protein_id}\t{go_term}\t{confidence:.6f}\n")
                     total_predictions += 1
 
             # Write batch to file
@@ -130,8 +130,8 @@ def main():
                         help='Path to test embeddings pickle file')
     parser.add_argument('--labels', type=str, required=True,
                         help='Path to preprocessed labels (for GO term mappings)')
-    parser.add_argument('--output', type=str, default='submissions/submission.csv',
-                        help='Output submission file path')
+    parser.add_argument('--output', type=str, default='submissions/submission.tsv',
+                        help='Output submission file path (TSV format)')
     parser.add_argument('--threshold', type=float, default=0.5,
                         help='Prediction threshold')
     parser.add_argument('--batch_size', type=int, default=32,
@@ -198,7 +198,7 @@ def main():
 
     # Validate submission format
     print("\nValidating submission format...")
-    df = pd.read_csv(args.output, nrows=10)
+    df = pd.read_csv(args.output, sep='\t', nrows=10)
     print(f"First 10 rows:")
     print(df)
 
