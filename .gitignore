@@ -1,9 +1,23 @@
-# Dataset files
+# Dataset files (competition data)
 cafa-6-protein-function-prediction/
 *.zip
 *.fasta
-*.tsv
 *.obo
+
+# Large data files (but allow small test/sample files)
+*.pkl
+*.h5
+*.parquet
+*.npy
+
+# TSV/CSV files (data files, but allow small configs)
+*.tsv
+*.csv
+# But allow any TSV/CSV in docs or examples
+!docs/**/*.tsv
+!docs/**/*.csv
+!examples/**/*.tsv
+!examples/**/*.csv
 
 # Python
 __pycache__/
@@ -40,6 +54,10 @@ env/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
+# But allow example notebooks in docs
+!docs/**/*.ipynb
+!examples/**/*.ipynb
+!notebooks/examples/**/*.ipynb
 
 # PyCharm
 .idea/
@@ -47,25 +65,27 @@ env/
 # VS Code
 .vscode/
 
-# Model files
-models/
+# Trained model checkpoints (in root-level directories)
+# This ignores /models/ and /checkpoints/ but NOT /src/models/
+/models/
+/checkpoints/
 *.pth
 *.pt
-*.h5
-*.pkl
+*.ckpt
+*.weights
 *.joblib
+
+# Data directories (in root, not in src)
+# This ignores /data/ but NOT /src/data/
+/data/
+/datasets/
 
 # Logs and outputs
 logs/
 *.log
-outputs/
-results/
-submissions/
-
-# Data files
-data/
-*.csv
-*.parquet
+/outputs/
+/results/
+/submissions/
 
 # OS files
 .DS_Store
@@ -82,13 +102,23 @@ Thumbs.db
 kaggle.json
 .kaggle/
 
-# Plots and figures
+# Plots and figures (generated)
 *.png
 *.jpg
 *.jpeg
 *.pdf
 *.svg
+# But allow documentation images
+!docs/**/*.png
+!docs/**/*.jpg
+!images/**/*.png
+!images/**/*.jpg
+!assets/**/*.png
 
-# Except the figures you explicitly want to track
-!docs/*.png
-!images/*.png
+# IDE
+*.code-workspace
+
+# Allow all Python source code in src/
+# (This ensures src/data/ and src/models/ are never ignored)
+!src/**/*.py
+!scripts/**/*.py
